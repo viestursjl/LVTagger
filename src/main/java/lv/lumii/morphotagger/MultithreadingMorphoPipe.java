@@ -323,16 +323,20 @@ class WorkerThread extends Thread {
     private String output_JSON(List<CoreLabel> tokens) throws Exception {
         LinkedList<String> tokenJSON = new LinkedList<String>();
 
-        Analyzer phoneticAnalyzer = new Analyzer("Phonetic_v2.xml", false);
+        Analyzer phoneticAnalyzer = null;
+        if (params.displayPhonetic) {
+            phoneticAnalyzer = new Analyzer("Phonetic_v2.xml", false);
+        }
+
         for (CoreLabel word : tokens) {
             String token = word.getString(TextAnnotation.class);
             if (token.contains("<s>")) continue;
             Word analysis = word.get(LVMorphologyAnalysis.class);
             Wordform maxwf = analysis.getMatchingWordform(word.getString(AnswerAnnotation.class), false);
 
-            String phonetic_wf = get_phonetic(maxwf, maxwf.getTag(), phoneticAnalyzer);
             if (params.mini_tag) maxwf.removeNonlexicalAttributes();
             if (params.displayPhonetic) {
+                String phonetic_wf = get_phonetic(maxwf, maxwf.getTag(), phoneticAnalyzer);
                 if (maxwf != null)
                     tokenJSON.add(String.format("{\"Word\":\"%s\",\"Tag\":\"%s\",\"Lemma\":\"%s\",\"Phonetic\":\"%s\"}", JSONValue.escape(token), JSONValue.escape(maxwf.getTag()), JSONValue.escape(maxwf.getValue(AttributeNames.i_Lemma)), phonetic_wf));
                 else

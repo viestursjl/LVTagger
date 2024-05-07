@@ -193,7 +193,7 @@ public class MorphoPipe {
 		if (params.displayPhonetic) {
 			phoneticAnalyzer = new Analyzer("Phonetic_v2.xml", false);
 		}
-		
+
 		for (CoreLabel word : tokens) {
 			String token = word.getString(TextAnnotation.class);
 			if (token.contains("<s>")) continue;

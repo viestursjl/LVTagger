@@ -24,6 +24,7 @@ import java.io.PrintWriter;
 import java.util.*;
 import java.util.Map.Entry;
 
+import lv.semti.morphology.analyzer.Analyzer;
 import lv.semti.morphology.analyzer.Splitting;
 import lv.semti.morphology.analyzer.Word;
 import lv.semti.morphology.analyzer.Wordform;
@@ -121,7 +122,7 @@ public class MorphoPipe {
 	 * @param text - actual tokens to be output
 	 */
 	public static void processSentences(
-			CMMClassifier<CoreLabel> cmm, PrintStream out, String text) {
+			CMMClassifier<CoreLabel> cmm, PrintStream out, String text) throws Exception {
 		
 		if (params.inputType == ProcessingParams.inputTypes.PARAGRAPH || params.inputType == ProcessingParams.inputTypes.VERT) { // split in multiple sentences
 			if (params.outputSeparators) out.println("<p>");
@@ -142,12 +143,14 @@ public class MorphoPipe {
 	 * @param sentence - actual tokens to be output
 	 */
 	public static void outputSentence(CMMClassifier<CoreLabel> cmm,
-			PrintStream out, List<CoreLabel> sentence) {
+			PrintStream out, List<CoreLabel> sentence) throws Exception {
 		if (params.outputSeparators) out.println("<s>");
 
         if (params.outputType != ProcessingParams.outputTypes.lowercasedText && params.outputType != ProcessingParams.outputTypes.analyzerOptions) { //FIXME - a separate flag would be better
             sentence = cmm.classify(sentence); // runs the actual morphotagging system
         }
+
+		// TODO: ŠEIT izsaukt fonētisko locīšanu
 
 		switch (params.outputType) {
 		case JSON:
@@ -183,25 +186,59 @@ public class MorphoPipe {
 		out.flush();
 	}	
 	
-	private static String output_JSON(List<CoreLabel> tokens) {		
+	private static String output_JSON(List<CoreLabel> tokens) throws Exception {
 		LinkedList<String> tokenJSON = new LinkedList<String>();
+
+		Analyzer phoneticAnalyzer = null;
+		if (params.displayPhonetic) {
+			phoneticAnalyzer = new Analyzer("Phonetic_v2.xml", false);
+		}
 		
 		for (CoreLabel word : tokens) {
 			String token = word.getString(TextAnnotation.class);
 			if (token.contains("<s>")) continue;
 			Word analysis = word.get(LVMorphologyAnalysis.class);
 			Wordform maxwf = analysis.getMatchingWordform(word.getString(AnswerAnnotation.class), false);
+
 			if (params.mini_tag) maxwf.removeNonlexicalAttributes();
-			if (maxwf != null)
-				tokenJSON.add(String.format("{\"Word\":\"%s\",\"Tag\":\"%s\",\"Lemma\":\"%s\"}", JSONValue.escape(token), JSONValue.escape(maxwf.getTag()), JSONValue.escape(maxwf.getValue(AttributeNames.i_Lemma))));
-			else 
-				tokenJSON.add(String.format("{\"Word\":\"%s\",\"Tag\":\"-\",\"Lemma\":\"%s\"}", JSONValue.escape(token), JSONValue.escape(token)));			
+			if (params.displayPhonetic) {
+				String phonetic_wf = get_phonetic(maxwf, maxwf.getTag(), phoneticAnalyzer);
+				if (maxwf != null)
+					tokenJSON.add(String.format("{\"Word\":\"%s\",\"Tag\":\"%s\",\"Lemma\":\"%s\",\"Phonetic\":\"%s\"}", JSONValue.escape(token), JSONValue.escape(maxwf.getTag()), JSONValue.escape(maxwf.getValue(AttributeNames.i_Lemma)), phonetic_wf));
+				else
+					tokenJSON.add(String.format("{\"Word\":\"%s\",\"Tag\":\"-\",\"Lemma\":\"%s\",\"Phonetic\":\"%s\"}", JSONValue.escape(token), JSONValue.escape(token), phonetic_wf));
+			} else {
+				if (maxwf != null)
+					tokenJSON.add(String.format("{\"Word\":\"%s\",\"Tag\":\"%s\",\"Lemma\":\"%s\"}", JSONValue.escape(token), JSONValue.escape(maxwf.getTag()), JSONValue.escape(maxwf.getValue(AttributeNames.i_Lemma))));
+				else
+					tokenJSON.add(String.format("{\"Word\":\"%s\",\"Tag\":\"-\",\"Lemma\":\"%s\"}", JSONValue.escape(token), JSONValue.escape(token)));
+			}
 		}
 		
 		String s = formatJSON(tokenJSON).toString();
 
 		return s;
 	}
+
+
+	private static String get_phonetic(Wordform maxwf, String wordclass, Analyzer phoneticAnalyzer) {
+		// Iegūst fonētisko lemmu vai pārveido ortogrāfiju par fonētiku manuāli
+		String ph_lemma = maxwf.getValue("pronunciations");
+		if (ph_lemma == null) {
+			return "_";
+		} else {
+			Word w = new Word(ph_lemma);
+			ArrayList<Wordform> forms = phoneticAnalyzer.generateInflections(ph_lemma);
+			for (Wordform wf : forms) {
+				if (wf.getTag().equals(wordclass)) {
+					wf.setSAMPA();
+					return wf.getSAMPA().replace("#", "");
+				}
+			}
+		}
+		return "_";
+	}
+
 	
 	private static void output_XML(List<CoreLabel> tokens, PrintStream straume) throws IOException {
 		PrintWriter w = new PrintWriter(straume);
